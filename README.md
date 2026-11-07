@@ -54,6 +54,9 @@ Convert to Excel
     |
 Save Clean Excel File
 
+
+![n8n Workflow](Workflow%20Architecture.png)
+
 ## Project Files
 
 | File | Description |
