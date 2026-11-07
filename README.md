@@ -82,6 +82,22 @@ Save Clean Excel File
 - Docker
 - n8n running locally
 
+
+## Final output
+- All messy data is cleaned according to the specified requirements.
+- Empty records are removed.
+- Duplicate records are removed.
+- Email addresses are properly validated.
+- Bangladeshi phone numbers are properly validated.
+- Dates are standardized to YYYY-MM-DD.
+- Names and cities use consistent capitalization.
+- Extra spaces are removed.
+- The final dataset contains only valid and standardized data.
+- The cleaned Excel file is successfully exported as clean_customers.xlsx.
+- The n8n workflow runs automatically without requiring manual data cleaning.
+- The submitted workflow can be executed successfully using the provided input file.
+
+
 ## Workflow Screenshot
 
 ![n8n Workflow](workflow-Clean%20a%20Messy%20Excel%20File%20Using%20n8n.jpg)
@@ -89,13 +105,14 @@ Save Clean Excel File
 ## Demo Video or Video Tutorial
 
 Watch the complete workflow execution demonstration.
+
 [Watch the Project Demo on YouTube]()
 
 ## Learning Outcomes
 
 This project demonstrates workflow automation, data validation, JavaScript-based data transformation, duplicate detection, and Excel file processing using n8n.
 
-## 📄 License
+## License
 
 BSD 3-Clause License
 
