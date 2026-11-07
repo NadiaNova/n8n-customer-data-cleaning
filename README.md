@@ -86,13 +86,18 @@ Save Clean Excel File
 
 ![n8n Workflow](workflow-Clean%20a%20Messy%20Excel%20File%20Using%20n8n.jpg)
 
-## Demo Video
+## Demo Video or Video Tutorial
 
 Watch the complete workflow execution demonstration.
+[Watch the Project Demo on YouTube]()
 
 ## Learning Outcomes
 
 This project demonstrates workflow automation, data validation, JavaScript-based data transformation, duplicate detection, and Excel file processing using n8n.
+
+## 📄 License
+
+BSD 3-Clause License
 
 ## Author
 
