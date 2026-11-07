@@ -1,0 +1,12 @@
+CUSTOMER DATA CLEANING REPORT
+============================
+
+Total Rows Imported: 15
+Empty Rows Removed: 2
+Invalid Emails Removed: 2
+Invalid Phones Removed: 2
+Duplicate Rows Removed: 2
+Invalid Dates Blank: 2
+Final Row Count: 7
+
+Status: Cleaning completed
