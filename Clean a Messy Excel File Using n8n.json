@@ -1,0 +1,411 @@
+{
+  "name": "Clean a Messy Excel File Using n8n",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        -192
+      ],
+      "id": "497bb466-b842-4924-87c0-c5021a0efd84",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/home/node/.n8n-files/messy_customers.xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -208,
+        -192
+      ],
+      "id": "ff9dc1c7-f2c5-4703-a2f1-4289629643e6",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        16,
+        -192
+      ],
+      "id": "9b837e61-ccdf-4a6f-a157-08679dc9262a",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// n8n Code Node\n// Mode: Run Once for All Items\n\nconst rows = $input.all().map(item => item.json);\n\nconst cleaned = [];\nconst seenEmails = new Set();\nconst seenPhones = new Set();\n\nconst stats = {\n  totalRows: rows.length,\n  emptyRows: 0,\n  invalidEmails: 0,\n  invalidPhones: 0,\n  duplicateRows: 0,\n  invalidDates: 0\n};\n\n// Find columns even if headers contain extra spaces\nfunction getValue(row, column) {\n  const key = Object.keys(row).find(\n    k => k.trim().toLowerCase() === column.toLowerCase()\n  );\n  return key ? row[key] : \"\";\n}\n\n// Clean spaces and capitalization\nfunction properCase(value) {\n  return String(value ?? \"\")\n    .trim()\n    .replace(/\\s+/g, \" \")\n    .toLowerCase()\n    .replace(/\\b[a-z]/g, c => c.toUpperCase());\n}\n\n// Validate email\nfunction validEmail(email) {\n  return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$/.test(email);\n}\n\n// Normalize Bangladesh mobile number\nfunction normalizePhone(value) {\n  let phone = String(value ?? \"\").trim().replace(/\\D/g, \"\");\n\n  if (phone.startsWith(\"00880\")) {\n    phone = phone.slice(2);\n  }\n\n  if (phone.startsWith(\"8801\")) {\n    phone = \"0\" + phone.slice(3);\n  }\n\n  return phone;\n}\n\nfunction validPhone(phone) {\n  return /^01[3-9]\\d{8}$/.test(phone);\n}\n\n// Validate a calendar date\nfunction makeDate(year, month, day) {\n  const d = new Date(Date.UTC(year, month - 1, day));\n\n  if (\n    d.getUTCFullYear() !== year ||\n    d.getUTCMonth() !== month - 1 ||\n    d.getUTCDate() !== day\n  ) return \"\";\n\n  return `${year}-${String(month).padStart(2, \"0\")}-${String(day).padStart(2, \"0\")}`;\n}\n\n// Convert Excel dates and common date formats\nfunction normalizeDate(value) {\n  if (value === null || value === undefined || value === \"\") {\n    return \"\";\n  }\n\n  // Excel serial date\n  if (typeof value === \"number\" && value > 0) {\n    const d = new Date(Date.UTC(1899, 11, 30) + value * 86400000);\n    return makeDate(\n      d.getUTCFullYear(),\n      d.getUTCMonth() + 1,\n      d.getUTCDate()\n    );\n  }\n\n  const s = String(value).trim();\n  let m;\n\n  // YYYY-MM-DD\n  m = s.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/);\n  if (m) return makeDate(+m[1], +m[2], +m[3]);\n\n  // DD-MM-YYYY (e.g. 03-05-2025 = 3 May)\n  m = s.match(/^(\\d{1,2})-(\\d{1,2})-(\\d{4})$/);\n  if (m) return makeDate(+m[3], +m[2], +m[1]);\n\n  // MM/DD/YYYY (e.g. 01/05/2025 = January 5)\n  m = s.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);\n  if (m) return makeDate(+m[3], +m[1], +m[2]);\n\n  return \"\";\n}\n\nfor (const row of rows) {\n  const name = properCase(getValue(row, \"Full Name\"));\n  const email = String(getValue(row, \"Email\") ?? \"\")\n    .trim().toLowerCase();\n  const phone = normalizePhone(getValue(row, \"Phone\"));\n  const city = properCase(getValue(row, \"City\"));\n  const rawDate = getValue(row, \"Date\");\n  const date = normalizeDate(rawDate);\n\n  // Remove completely empty rows\n  if (![name, email, phone, city, rawDate].some(v => String(v ?? \"\").trim() !== \"\")) {\n    stats.emptyRows++;\n    continue;\n  }\n\n  // Validate email\n  if (!validEmail(email)) {\n    stats.invalidEmails++;\n    continue;\n  }\n\n  // Validate phone\n  if (!validPhone(phone)) {\n    stats.invalidPhones++;\n    continue;\n  }\n\n  // Remove duplicate email OR phone\n  if (seenEmails.has(email) || seenPhones.has(phone)) {\n    stats.duplicateRows++;\n    continue;\n  }\n\n  seenEmails.add(email);\n  seenPhones.add(phone);\n\n  if (rawDate !== \"\" && !date) {\n    stats.invalidDates++;\n  }\n\n  cleaned.push({\n    \"Customer ID\": `CUST-${String(cleaned.length + 1).padStart(4, \"0\")}`,\n    \"Full Name\": name,\n    \"Email\": email,\n    \"Phone\": phone,\n    \"City\": city,\n    \"Date\": date\n  });\n}\n\n// Return customers plus one summary record.\n// We will separate them in the next step.\nconst customerItems = cleaned.map(row => ({\n  json: { ...row, _recordType: \"customer\" }\n}));\n\nconst summary = {\n  _recordType: \"summary\",\n  \"Total Rows Imported\": stats.totalRows,\n  \"Empty Rows Removed\": stats.emptyRows,\n  \"Invalid Emails Removed\": stats.invalidEmails,\n  \"Invalid Phones Removed\": stats.invalidPhones,\n  \"Duplicate Rows Removed\": stats.duplicateRows,\n  \"Invalid Dates Blank\": stats.invalidDates,\n  \"Final Row Count\": cleaned.length\n};\n\nreturn [\n  ...customerItems,\n  { json: summary }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -192
+      ],
+      "id": "f4ac7909-8588-439d-a685-e231ab609f29",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ed74fcb6-6f7b-4c74-a7dd-c248b3753c44",
+              "leftValue": "={{$json._recordType}}",
+              "rightValue": "customer",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        464,
+        -192
+      ],
+      "id": "0a0d5106-47af-43e8-a240-c26d1dc0cdc3",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "636a4fef-f463-4a42-bdc9-cfc47ae60c46",
+              "name": "Customer ID",
+              "value": "={{ $json['Customer ID'] }}",
+              "type": "string"
+            },
+            {
+              "id": "4aa01421-1d35-42ad-a2c8-5e8bec293cf6",
+              "name": "Full Name",
+              "value": "={{ $json['Full Name'] }}",
+              "type": "string"
+            },
+            {
+              "id": "dcf9c73c-2efa-414c-8ec1-76da3fcd1833",
+              "name": "Email",
+              "value": "={{ $json.Email }}",
+              "type": "string"
+            },
+            {
+              "id": "6cb7ba18-4a0a-4eec-ad7d-d637f059474d",
+              "name": "Phone",
+              "value": "={{ $json.Phone }}",
+              "type": "string"
+            },
+            {
+              "id": "bd8afaff-2ef9-4317-88db-d9e826fd23ee",
+              "name": "City",
+              "value": "={{ $json.City }}",
+              "type": "string"
+            },
+            {
+              "id": "0e9bf906-9497-4557-b423-e3ea77bd8ed3",
+              "name": "Date",
+              "value": "={{ $json.Date }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        688,
+        -288
+      ],
+      "id": "a50b3f0d-ea13-4fbe-a347-67ba822b7c85",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "fileName": "clean_customers.xlsx"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        912,
+        -288
+      ],
+      "id": "f0469fa9-e08e-4996-bf0f-d2a244e9c4a4",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/home/node/.n8n-files/clean_customers.xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        -288
+      ],
+      "id": "cd619a0c-2d9b-428d-9eb3-f10846887c5f",
+      "name": "Read/Write Files from Disk1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2afb76e7-5f53-467b-b548-09c11603b1bc",
+              "name": "Total Rows Imported",
+              "value": "={{ $json['Total Rows Imported'] }}",
+              "type": "number"
+            },
+            {
+              "id": "133e64f8-1e2f-4fc5-b964-797a1818f911",
+              "name": "Empty Rows Removed",
+              "value": "={{ $json['Empty Rows Removed'] }}",
+              "type": "number"
+            },
+            {
+              "id": "54cc169c-7f7e-4550-be16-3adbe16b0be4",
+              "name": "Invalid Emails Removed",
+              "value": "={{ $json['Invalid Emails Removed'] }}",
+              "type": "number"
+            },
+            {
+              "id": "788b8f26-aa50-42d1-97fa-4e92bd9fa5e8",
+              "name": "Invalid Phones Removed",
+              "value": "={{ $json['Invalid Phones Removed'] }}",
+              "type": "number"
+            },
+            {
+              "id": "2e7ca581-a5aa-4f02-9732-1f2778e5f27a",
+              "name": "Duplicate Rows Removed",
+              "value": "={{ $json['Duplicate Rows Removed'] }}",
+              "type": "number"
+            },
+            {
+              "id": "7544cd98-4e83-4f91-b1b2-4cf64e48f2b2",
+              "name": "Invalid Dates Blank",
+              "value": "={{ $json['Invalid Dates Blank'] }}",
+              "type": "number"
+            },
+            {
+              "id": "7bf7cf57-01b8-4df3-a894-f9165b5b9c9c",
+              "name": "Final Row Count",
+              "value": "={{ $json['Final Row Count'] }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        688,
+        -96
+      ],
+      "id": "77e7061c-e7ec-4de4-8dd1-48239d7af4a5",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\n\nconst report = [\n  \"CUSTOMER DATA CLEANING REPORT\",\n  \"============================\",\n  \"\",\n  `Total Rows Imported: ${s[\"Total Rows Imported\"]}`,\n  `Empty Rows Removed: ${s[\"Empty Rows Removed\"]}`,\n  `Invalid Emails Removed: ${s[\"Invalid Emails Removed\"]}`,\n  `Invalid Phones Removed: ${s[\"Invalid Phones Removed\"]}`,\n  `Duplicate Rows Removed: ${s[\"Duplicate Rows Removed\"]}`,\n  `Invalid Dates Blank: ${s[\"Invalid Dates Blank\"]}`,\n  `Final Row Count: ${s[\"Final Row Count\"]}`,\n  \"\",\n  \"Status: Cleaning completed\"\n].join(\"\\n\");\n\nreturn [{json: {report}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        -96
+      ],
+      "id": "2420ded2-ad3a-4b1b-a105-ea8147542951",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "report",
+        "options": {
+          "fileName": "summary_report.txt"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        -96
+      ],
+      "id": "41c443d7-4fcd-480f-9a6f-14f632fe1b7b",
+      "name": "Convert to File1"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/home/node/.n8n-files/summary_report.txt",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1360,
+        -96
+      ],
+      "id": "a8ba0cc7-46fc-4336-a31d-9a26c32f4fc5",
+      "name": "Read/Write Files from Disk2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Convert to File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File1": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c18eff79-40f4-42cc-b6c6-b76233444dbe",
+  "meta": {
+    "instanceId": "your-n8n-instance-id"
+  },
+  "nodeGroups": [],
+  "id": "your-n8n-workflow-id",
+  "tags": []
+}
