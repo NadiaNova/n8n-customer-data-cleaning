@@ -1,0 +1,10 @@
+@"
+.env
+.env.*
+!.env.example
+credentials.json
+secrets/
+node_modules/
+.DS_Store
+Thumbs.db
+"@ | Set-Content .gitignore
